@@ -1,0 +1,87 @@
+services:
+  roach1:
+    image: docker.io/cockroachdb/cockroach:latest
+    volumes:
+      - roach1_data:/cockroach/cockroach_data
+    command:
+      - start
+      - --insecure
+      - --advertise-addr=roach1:26357
+      - --http-addr=roach1:8080
+      - --listen-addr=roach1:26357
+      - --sql-addr=roach1:26257
+      - --join=roach1:26357,roach2:26357,roach3:26357
+    healthcheck:
+      test: ["CMD", "curl", "-sSf", "http://roach1:8080/health"]
+      start_period: 10s
+      interval: 10s
+      timeout: 10s
+      retries: 3
+  roach2:
+    image: docker.io/cockroachdb/cockroach:latest
+    volumes:
+      - roach2_data:/cockroach/cockroach_data
+    command:
+      - start
+      - --insecure
+      - --advertise-addr=roach2:26357
+      - --http-addr=roach2:8080
+      - --listen-addr=roach2:26357
+      - --sql-addr=roach2:26257
+      - --join=roach1:26357,roach2:26357,roach3:26357
+    healthcheck:
+      test: ["CMD", "curl", "-sSf", "http://roach2:8080/health"]
+      start_period: 10s
+      interval: 10s
+      timeout: 10s
+      retries: 3
+  roach3:
+    image: docker.io/cockroachdb/cockroach:latest
+    volumes:
+      - roach3_data:/cockroach/cockroach_data
+    command:
+      - start
+      - --insecure
+      - --advertise-addr=roach3:26357
+      - --http-addr=roach3:8080
+      - --listen-addr=roach3:26357
+      - --sql-addr=roach3:26257
+      - --join=roach1:26357,roach2:26357,roach3:26357
+    healthcheck:
+      test: ["CMD", "curl", "-sSf", "http://roach3:8080/health"]
+      start_period: 10s
+      interval: 10s
+      timeout: 10s
+      retries: 3
+  cluster-init:
+    image: docker.io/cockroachdb/cockroach:latest
+    depends_on:
+      roach1:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if ! curl -sSf http://roach1:8080/health?ready=1; then
+          cockroach init --insecure --host roach1:26357
+        fi
+  haproxy:
+    image: docker.io/haproxy:lts
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    ports:
+      - "8080:8080"
+      - "5432:5432"
+  app:
+    build:
+      context: .
+    environment:
+      EXAMPLE_DB_HOST: "haproxy"
+    depends_on:
+      cluster-init:
+        condition: service_completed_successfully
+
+volumes:
+  roach1_data:
+  roach2_data:
+  roach3_data:
